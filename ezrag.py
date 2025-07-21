@@ -140,7 +140,7 @@ def main():
         quit()
     logging.info("embedding model available!")
 
-    if not check_model_available(CHAT_MODEL):
+    if not check_model_available(chat_model):
         logging.fatal(f"couldn't get model {chat_model}! quitting... :(")
         quit()
     logging.info("chat model available!")
