@@ -41,14 +41,14 @@ def turn_string_into_chunks(source: str, string: str, size_of_chunks: int = 1000
     """
     return [[str(s), str(source)] for s in textwrap.wrap(string, size_of_chunks)]
 
-def add_string_to_store(store, string):
+def add_string_to_store(store, string, embed_model):
     """Creates an embedding from a string, and stores it in the current vector store.
 
     :param store: the store. if store is None, then just returns the embedding from the string
     :param string: the string to embed and add to the store
     :return: either just the string's embeddings or the updated store
     """
-    response = ollama.embed(EMBEDDING_MODEL, string)
+    response = ollama.embed(embed_model, string)
     if store is None:
         return response.embeddings
     return store + response.embeddings
@@ -125,17 +125,23 @@ def main():
 
 
     parser = argparse.ArgumentParser(description="Initalizes a RAG system and allows an LLM chat using local LLMs through ollama.")
+    parser.add_argument("-e", "--embed-model", help=f"The embedding model to use. Defaults to {EMBEDDING_MODEL} if omitted.")
+    parser.add_argument("-c", "--chat-model", help=f"The chat model to use. Defaults to {CHAT_MODEL} if omitted.")
+    parser.add_argument("-s", "--show-evidence", help="Shows the file source and the evidence retrieved from the RAG database.", action="store_true")
     parser.add_argument("sources", nargs="+", help="A source is either a file or a directory containing those files.")
 
     args = parser.parse_args()
 
-    if not check_model_available(EMBEDDING_MODEL):
-        logging.fatal(f"couldn't get model {EMBEDDING_MODEL}! quitting... :(")
+    embedding_model = EMBEDDING_MODEL if args.embed_model is None else args.embed_model
+    chat_model = CHAT_MODEL if args.chat_model is None else args.chat_model
+
+    if not check_model_available(embedding_model):
+        logging.fatal(f"couldn't get model {embedding_model}! quitting... :(")
         quit()
     logging.info("embedding model available!")
 
     if not check_model_available(CHAT_MODEL):
-        logging.fatal(f"couldn't get model {CHAT_MODEL}! quitting... :(")
+        logging.fatal(f"couldn't get model {chat_model}! quitting... :(")
         quit()
     logging.info("chat model available!")
 
@@ -149,16 +155,8 @@ def main():
         for s in content_db:
             logging.info(f"adding string to store...:{s[0]}")
             logging.info(f"{{file name: {s[1]}; content: {s[0]}}}")
-            store = add_string_to_store(store, f"{s[1]}:{s[0]}")
+            store = add_string_to_store(store, f"{s[1]}:{s[0]}", embedding_model)
             logging.info("...added string")
-    # vector database
-    # store = add_string_to_store(None, "bobby sucks")
-    # store = add_string_to_store(store, "many say that the goat is jimmy")
-    # store = add_string_to_store(store, "candice is on the suns")
-    # store = add_string_to_store(store, "dont ddrink and drive")
-    # store = add_string_to_store(store, "just shut up and dribble")
-    # store = add_string_to_store(store, "jimmy is the goat!")
-    # print(np.array(store).shape)
 
     store = np.array(store)
 
@@ -178,11 +176,16 @@ def main():
                 continue
         except KeyboardInterrupt:
             quit()
-        response = ollama.embed(EMBEDDING_MODEL, search)
 
-        query_vector = np.array(response.embeddings)
+        response = None
+        D = None
+        I = None
+        with console.status("[bold green]vectorizing input and searching..."):
+            response = ollama.embed(embedding_model, search)
 
-        D, I = index.search(query_vector, 5)
+            query_vector = np.array(response.embeddings)
+
+            D, I = index.search(query_vector, 5)
 
         logging.info(D)
         logging.info(I)
@@ -192,13 +195,17 @@ def main():
 
         result = [content_db[i] for i in indices]
 
+        if args.show_evidence:
+            for r in result:
+                console.print(f"[bold green]retrieved evidence [bold red]\"{r[0]}\" [bold green]from file: [bold red]{r[1]}")
+
         logging.info(f"{search}:{result}")
 
         info = [pair[0] for pair in result]
         files = set(pair[1] for pair in result)
 
         with console.status("[bold green]thinking..."):
-            final_response = ollama.chat(CHAT_MODEL, messages=[
+            final_response = ollama.chat(chat_model, messages=[
                 {
                     "role": "system",
                     "content": f"the user asked to find {search}, the information retrieved was {info}, and the information was retrieved from these files: {files}. summarize it for them based ONLY on the result. be sure to tell them the name of the files. add a little sass too; chastise the user for being too lazy to read the text."
