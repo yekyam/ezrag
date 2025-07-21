@@ -12,6 +12,7 @@ import ollama
 import pymupdf4llm
 import numpy as np
 from rich.console import Console
+from rich.progress import track
 
 logging.basicConfig(level=logging.WARN)
 
@@ -151,12 +152,12 @@ def main():
     logging.info(len(content_db))
     store = None
 
-    with console.status("[bold green]creating embeddings..."):
-        for s in content_db:
-            logging.info(f"adding string to store...:{s[0]}")
-            logging.info(f"{{file name: {s[1]}; content: {s[0]}}}")
-            store = add_string_to_store(store, f"{s[1]}:{s[0]}", embedding_model)
-            logging.info("...added string")
+    # with console.status("[bold green]creating embeddings..."):
+    for s in track(content_db, description="[bold green]creating embeddings.."):
+        logging.info(f"adding string to store...:{s[0]}")
+        logging.info(f"{{file name: {s[1]}; content: {s[0]}}}")
+        store = add_string_to_store(store, f"{s[1]}:{s[0]}", embedding_model)
+        logging.info("...added string")
 
     store = np.array(store)
 
